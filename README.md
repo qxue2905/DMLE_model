@@ -1,5 +1,6 @@
-# DMLE_model
-Code for the dual moisture limitation evaporation model
+# Bare Soil Evaporation Model
+
+---
 
 ## 1. Overview
 
@@ -8,9 +9,9 @@ This model simulates water and heat exchange at the soil–atmosphere interface 
 - Evaporation: latent heat flux computed via a modified Penman-Monteith equation
 - Soil moisture transport: Richards equation with Crank-Nicholson semi-implicit time discretization (theta_w = 0.5)
 - Water table coupling: Darcy bottom boundary condition, with configurable water table depth and coupling strength
-- Film flow: film conductivity ka based on Lebeau & Konrad (2010), describing surface resistance under ultra-thin water films
+- Film flow: film conductivity ka based on Lebeau & Konrad (2010), describing surface resistance under thin water films
 - Horton runoff: infiltration capacity via Green-Ampt approximation; excess rainfall becomes runoff
-- Performance evaluation: outputs R², RMSE, and 25 diagnostic columns per time step
+- Performance evaluation: outputs R², RMSE, and a result CSV with 8 input columns + 17 output columns per time step
 - Visualization: automatic 2×2 combined plot (time series, scatter fit, Rs, theta1)
 
 ### Theoretical References
@@ -39,9 +40,9 @@ This model simulates water and heat exchange at the soil–atmosphere interface 
     ├── plot.c / plot.h     # gnuplot plotting (2×2 combined figure)
     ├── constants.h         # Physical constants and default parameters
     ├── Makefile            # Build script
-    ├── param.txt           # Parameter file (water table, measurement height, coupling factor)
-    ├── soil.txt            # Soil texture file (sand/clay content for 14 layers)
     ├── data/
+    │   ├── soil.txt        # Soil texture file (sand/clay content for 14 layers)
+    │   ├── param.txt       # Parameter file (WTD depth, h_flx, coupling factor, [initial theta])
     │   └── flux_data.csv   # Flux station observation data
     └── output/             # Output directory
         ├── rs_results.csv
@@ -64,22 +65,22 @@ This model simulates water and heat exchange at the soil–atmosphere interface 
 
 ### 3.3 Run
 
-    # Using default files (soil.txt / param.txt / data/flux_data.csv)
+    # Using default input files under data/
     make run
 
     # Custom input files
-    make run SOIL=mysoil.txt PARAM=myp.txt DATA=my_data.csv
+    make run SOIL=data/mysoil.txt PARAM=data/myp.txt DATA=data/my_data.csv
 
     # Or invoke the executable directly
-    ./baresoil_evap.exe -soil soil.txt -param param.txt data/flux_data.csv
+    ./baresoil_evap.exe -soil data/soil.txt -param data/param.txt data/flux_data.csv
 
 ### 3.4 Command-Line Arguments
 
 | Argument | Description |
 |----------|-------------|
-| -soil <file> | Soil texture file |
-| -param <file> | Parameter file |
-| <data_file> | Observation CSV  |
+| -soil <file> | Soil texture file (required; e.g. data/soil.txt) |
+| -param <file> | Parameter file (default: param.txt; typically data/param.txt) |
+| <data_file> | Observation CSV (default: data/flux_data.csv) |
 | -h / --help | Print help |
 
 ### 3.5 Other Makefile Targets
@@ -91,7 +92,7 @@ This model simulates water and heat exchange at the soil–atmosphere interface 
 
 ## 4. Input File Formats
 
-### 4.1 Soil Texture File (soil.txt)
+### 4.1 Soil Texture File (data/soil.txt)
 
 Two values per line, exactly 14 lines :
 
@@ -104,21 +105,26 @@ Two values per line, exactly 14 lines :
 - Column 2: clay content (0–1)
 - Silt content = 1 − sand − clay (computed automatically)
 
-### 4.2 Parameter File (param.txt)
+### 4.2 Parameter File (data/param.txt)
 
-A single line with 3 values:
+A single line with 3 or 4 values:
 
-    105.0 3.25 0.8
+    105.0 3.25 0.8 0.10
 
 | Column | Meaning | Unit |
 |--------|---------|------|
 | 1 | Water table depth | m (positive downward) |
 | 2 | Flux measurement height h_flx | m |
 | 3 | Groundwater coupling factor | 0–1 |
+| 4 | Initial soil moisture (optional) | m³/m³ (0–1) |
 
-Coupling factor: 0 = aquitard (no exchange), 1 = fully free Darcy flow, 0.5 = partial coupling.
+- **Column 4 (initial volumetric water content `theta_init`) is optional**; default **0.10**.
+- If provided, it must be in (0, 1); otherwise a warning is printed and 0.10 is used.
+- All 14 soil layers are initialized to this value (ice content = 0).
+- If only 3 values are given, `theta_init = 0.10`.
+- Coupling factor: 0 = aquitard (no exchange), 1 = fully free Darcy flow.
 
-### 4.3 Observation Data (flux_data.csv)
+### 4.3 Observation Data (data/flux_data.csv)
 
 Column names are matched by name, order-independent, case-insensitive. The following aliases are supported:
 
@@ -153,7 +159,7 @@ Example:
     ========================================
       Model Evaluation (coefficient of determination)
     ========================================
-      N          = 1234
+      N          = 12340
       R²         = 0.8521
       RMSE       = 35.42 W/m^2
     ========================================
@@ -164,7 +170,7 @@ Where:
 
 ### 5.2 Result CSV (output/rs_results.csv)
 
-25 columns, directly openable in Excel:
+25 columns in total (8 input columns + 17 output columns), directly openable in Excel:
 
 | Column | Name | Meaning |
 |--------|------|---------|
@@ -176,15 +182,15 @@ Where:
 | 13 | Lv | Latent heat of vaporization (J/kg) |
 | 14 | Ra | Aerodynamic resistance (s/m) |
 | 15 | q_s | Saturation specific humidity (kg/kg) |
-| 16 | hu | Soil relative humidity (−) |
+| 16 | hu | relative humidity (−) |
 | 17 | theta1 | Surface soil moisture (m³/m³) |
 | 18 | psi | Surface matric potential (m) |
-| 19 | Rs | Surface resistance (s/m) |
+| 19 | Rs | Soil resistance (s/m) |
 | 20 | ka | Film conductivity (m/s) |
 | 21 | film_thickness | Film thickness (m) |
 | 22 | De | Equivalent diameter (m) |
 | 23 | n_theta | Porosity (−) |
-| 24 | theta_m | Volumetric water content at h_m = 10³ m (m³/m³) |
+| 24 | theta_m | water content at psi = -10³ m (m³/m³) |
 | 25 | ka_formula | Formula string documenting the ka calculation |
 
 ### 5.3 Combined Figure (output/combined_plot.png)
@@ -207,7 +213,7 @@ If gnuplot is not installed, the program skips plotting and continues to output 
 | VON_KARM | 0.4 | von Kármán constant |
 | RHO_W | 1000 kg/m³ | Water density |
 | C_W | 4180 J/kg/K | Water specific heat capacity |
-| LAMBDA_0 | 2.501×10⁶ J/kg | Latent heat of vaporization at 0°C |
+| LAMBDA_0 | 2.501×10⁶ J/kg | Latent heat of vaporization |
 | LAMBDA_COEF | 2361 J/kg/K | Latent heat temperature coefficient |
 | CP_DRY | 1005 J/kg/K | Dry air specific heat at constant pressure |
 | R_DRY | 287.05 J/kg/K | Dry air gas constant |
