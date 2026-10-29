@@ -16,7 +16,7 @@ void free_model_result(ModelResult *result);
 #define N_LAYERS_DEFAULT 14
 
 static int read_param_file(const char *filename, double *depth, double *h_flx,
-                           double *coupling_factor)
+                           double *coupling_factor, double *init_theta)
 {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
@@ -32,9 +32,11 @@ static int read_param_file(const char *filename, double *depth, double *h_flx,
     }
     fclose(fp);
 
-    double d = 0.0, h = 0.0, cf = 0.0;
-    if (sscanf(line, "%lf %lf %lf", &d, &h, &cf) != 3) {
-        fprintf(stderr, "Error: 参数文件格式错误（应为 3 个数）\n");
+    double d = 0.0, h = 0.0, cf = 0.0, it = 0.10;
+    int n_read = sscanf(line, "%lf %lf %lf %lf", &d, &h, &cf, &it);
+
+    if (n_read < 3) {
+        fprintf(stderr, "Error: 参数文件格式错误（至少需要 3 个数：深度 高度 耦合系数 [初始含水量]）\n");
         return -1;
     }
 
@@ -45,9 +47,20 @@ static int read_param_file(const char *filename, double *depth, double *h_flx,
         cf = 0.8;
     }
 
+    /* 第 4 列可选：初始含水量，缺省 0.10 */
+    if (n_read >= 4) {
+        if (it <= 0.0 || it >= 1.0) {
+            fprintf(stderr, "Warning: 初始含水量应在 (0,1) 范围内，使用默认值 0.10\n");
+            it = 0.10;
+        }
+    } else {
+        it = 0.10;
+    }
+
     *depth = d;
     *h_flx = h;
     *coupling_factor = cf;
+    *init_theta = it;
 
     return 0;
 }
@@ -93,7 +106,9 @@ static void print_usage(const char *prog)
 {
     printf("\n用法: %s -soil <soil_file> [-param <param_file>] [data_file]\n", prog);
     printf("  -soil <file>    : 土壤质地文件，每行两个数：砂粒 黏粒 (0~1)，共14行\n");
-    printf("  -param <file>   : 参数文件 (默认 param.txt)，3 个数：地下水位深度 测量高度 耦合系数\n");
+    printf("  -param <file>   : 参数文件 (默认 param.txt)，3 或 4 个数：\n");
+    printf("                    地下水位深度 测量高度 耦合系数 [初始含水量]\n");
+    printf("                    （初始含水量可选，缺省 0.10）\n");
     printf("  data_file       : 观测数据CSV文件 (可选，默认 data/flux_data.csv)\n");
     printf("\n");
 }
@@ -150,7 +165,7 @@ static void print_evaluation_panel(const Dataset *ds, const ModelResult *result)
 
 int run_model_with_params(const Dataset *ds, double dt, int n_layers,
                           const WaterTable *wt, const SoilParams *soil_params,
-                          ModelResult **result_out)
+                          double init_theta, ModelResult **result_out)
 {
     SoilLayers *layers = create_soil_layers(n_layers);
     if (!layers)
@@ -162,7 +177,7 @@ int run_model_with_params(const Dataset *ds, double dt, int n_layers,
         free_soil_layers(layers);
         return -1;
     }
-    init_soil_state(state, 0.10);   
+    init_soil_state(state, init_theta);   /* 使用参数化的初始含水量 */
 
     ModelResult *result = create_model_result(ds->n);
     if (!result)
@@ -325,8 +340,9 @@ int main(int argc, char *argv[])
     double wtd_depth = 100.0;
     double h_flx = 5.0;
     double coupling_factor = 0.8;
+    double init_theta = 0.10;   /* 初始含水量，默认 0.10 */
 
-    read_param_file(param_file, &wtd_depth, &h_flx, &coupling_factor);
+    read_param_file(param_file, &wtd_depth, &h_flx, &coupling_factor, &init_theta);
 
     const int N_LAYERS = N_LAYERS_DEFAULT;
     double *sand = (double *)malloc(N_LAYERS * sizeof(double));
@@ -379,7 +395,7 @@ int main(int argc, char *argv[])
 
     ModelResult *result = NULL;
     int ret = run_model_with_params(ds, DEFAULT_DT, N_LAYERS, &wt,
-                                    soil_params, &result);
+                                    soil_params, init_theta, &result);
     if (ret != 0 || !result)
     {
         free_dataset(ds);

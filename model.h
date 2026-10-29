@@ -125,7 +125,7 @@ void update_soil_moisture_wt(const SoilParams *soil_params, SoilState *state,
                              double *horton_out);
 int run_model_with_params(const Dataset *ds, double dt, int n_layers,
                           const WaterTable *wt, const SoilParams *soil_params,
-                          ModelResult **result_out);
+                          double init_theta, ModelResult **result_out);
 void free_model_result(ModelResult *result);
 
 #endif /* MODEL_H */
